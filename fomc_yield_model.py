@@ -92,17 +92,34 @@ print(df_fomc.head())
 # ------------------------------
 # Step 4: Feature Engineering
 # ------------------------------
-X = df_fomc[['RateChange', 'InflationExp']]
-X = pd.concat([X, pd.get_dummies(df_fomc['Sentiment'], drop_first=True)], axis=1)
-X = sm.add_constant(X)
 
-# Define the target variables (yield deltas)
+# Ensure 'Sentiment' has all categories
+df_fomc['Sentiment'] = pd.Categorical(df_fomc['Sentiment'], categories=['Dovish', 'Neutral', 'Hawkish'])
+
+# One-hot encode Sentiment
+sentiment_dummies = pd.get_dummies(df_fomc['Sentiment'], prefix='Sentiment')
+
+# Build feature set
+X = pd.concat([
+    df_fomc[['RateChange', 'InflationExp']],
+    sentiment_dummies
+], axis=1)
+
+X = sm.add_constant(X)
+X = X.fillna(0)
+
+# Targets
 targets = {
     'Δ2Y': df_fomc['Δ2Y'],
     'Δ5Y': df_fomc['Δ5Y'],
     'Δ10Y': df_fomc['Δ10Y'],
     'Δ30Y': df_fomc['Δ30Y'],
 }
+
+# Align indices
+X = X.reset_index(drop=True)
+for k in targets:
+    targets[k] = targets[k].reset_index(drop=True)
 
 # ------------------------------
 # Step 5: Train Models and Predict
@@ -112,26 +129,33 @@ predictions = {}
 
 print("✅ Training regression models...\n")
 
-# Train a separate model for each yield delta
+# Align X and y indices and ensure all are float64
 for label, y in targets.items():
-    model = sm.OLS(y, X).fit()
+    y = pd.to_numeric(y, errors='coerce')  # Ensure y is numeric
+    y = y.loc[X.index]  # Align y to X by index
+    if len(y) != len(X):
+        print(f"⚠️ Mismatched lengths for {label}: y={len(y)}, X={len(X)}")
+        continue
+    model = sm.OLS(y.astype(float), X.astype(float)).fit()
     models[label] = model
     print(f"--- {label} ---")
     print(model.summary())
     print("\n")
 
+
 # ------------------------------
 # Step 6: Forecast Current Curve Move
 # ------------------------------
-# Input your current scenario (adjust these values as needed)
+# Ensure this matches dummy columns created
 scenario = {
+    'const': 1.0,
     'RateChange': 0.00,
     'InflationExp': 2.2,
-    'Sentiment_Hawkish': 1,  # 1 if Hawkish, 0 if not
-    'Sentiment_Neutral': 0   # 1 if Neutral, 0 if not
+    'Sentiment_Dovish': 0,
+    'Sentiment_Hawkish': 1,
+    'Sentiment_Neutral': 0
 }
-x_new = pd.DataFrame([scenario])
-x_new = sm.add_constant(x_new)
+x_new = pd.DataFrame([scenario])[X.columns]  # Ensure column order matches X
 
 print("📈 Forecasted yield curve moves based on current scenario:\n")
 for label, model in models.items():
@@ -145,7 +169,6 @@ current_curve = df_yields.iloc[-1]
 forecast_shift = [models[f'Δ{x}Y'].predict(x_new)[0] for x in ['2', '5', '10', '30']]
 forecasted_curve = current_curve + forecast_shift
 
-# Plot the current and forecasted yield curves
 plt.figure(figsize=(10, 6))
 plt.plot([2, 5, 10, 30], current_curve.values, marker='o', label='Current Curve')
 plt.plot([2, 5, 10, 30], forecasted_curve.values, marker='o', label='Forecasted Curve', linestyle='--')
