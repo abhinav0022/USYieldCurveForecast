@@ -149,10 +149,10 @@ for label, y in targets.items():
 # Ensure this matches dummy columns created
 scenario = {
     'const': 1.0,
-    'RateChange': -0.50,
-    'InflationExp': 2.2,
-    'Sentiment_Dovish': 1,
-    'Sentiment_Hawkish': 0,
+    'RateChange': 0.00,
+    'InflationExp': 3.6,
+    'Sentiment_Dovish': 0,
+    'Sentiment_Hawkish': 1,
     'Sentiment_Neutral': 0
 }
 x_new = pd.DataFrame([scenario])[X.columns]  # Ensure column order matches X
